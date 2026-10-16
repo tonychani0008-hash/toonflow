@@ -1,4 +1,4 @@
-import { onScopeDispose } from "vue";
+import { inject, onScopeDispose } from "vue";
 import { runAgentLoop, type AgentTool, type AgentToolResult } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Message, type Model } from "@earendil-works/pi-ai";
 import { EventSourceParserStream } from "eventsource-parser/stream";
@@ -30,6 +30,19 @@ export type NodeImageRequest = {
 export type NodeImageResult = { path: string; mimeType: string; mediaType: "image" };
 export type NodeVideoRequest = Omit<MediaGenerationRequest, "size"> & { directory: string; outputDirectory: string };
 export type NodeVideoResult = { path: string; mimeType: string; mediaType: "video" };
+export type NodeMediaTask = {
+  id: string;
+  directory: string;
+  canvasId: string;
+  mediaType: "image" | "video" | "audio";
+  outputDirectory: string;
+  status: "running" | "succeeded" | "failed" | "cancelled";
+  startedAt: number;
+  finishedAt?: number;
+  error?: string;
+  results?: { path: string; mimeType: string; mediaType: "image" | "video" | "audio" }[];
+};
+type MediaTaskQuery = Pick<NodeMediaTask, "directory" | "mediaType" | "outputDirectory"> & { canvasId?: string; id?: string };
 export type NodeMediaPriceRequest = (NodeImageRequest & { mediaType: "image" }) | (NodeVideoRequest & { mediaType: "video" }) | (NodeAudioRequest & { mediaType: "audio" });
 export type NodeMediaPrice = { price: string; tips: string };
 export type NodeAudioRequest = Pick<MediaGenerationRequest, "providerId" | "modelId" | "prompt" | "images" | "audios" | "voice" | "speed" | "volume" | "pitch" | "language" | "format" | "sampleRate"> & { directory: string; outputDirectory: string };
@@ -169,6 +182,7 @@ async function requestModel(input: NodeAiRequest, context: Context, model: Model
 
 export function useNodeAi() {
   const controller = new AbortController();
+  const getCanvas = inject<(() => { id: string } | undefined) | undefined>("canvas", undefined);
   onScopeDispose(() => controller.abort());
   const requestSignal = (signal?: AbortSignal) => signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
 
@@ -268,6 +282,56 @@ export function useNodeAi() {
     return generateMedia("audio", input, signal);
   }
 
+  function mediaTaskQuery(input: MediaTaskQuery) {
+    const canvasId = input.canvasId ?? getCanvas?.()?.id;
+    if (!canvasId) throw new Error("请先打开画布");
+    return { directory: input.directory, mediaType: input.mediaType, outputDirectory: input.outputDirectory, canvasId, id: input.id };
+  }
+
+  async function startMediaGeneration(mediaType: NodeMediaTask["mediaType"], input: NodeImageRequest | NodeVideoRequest | NodeAudioRequest, signal?: AbortSignal) {
+    if (!input.outputDirectory) throw new Error("后台生成需要节点输出目录");
+    const query = mediaTaskQuery({ ...input, mediaType, outputDirectory: input.outputDirectory });
+    return readResult<NodeMediaTask>(await fetch("/api/ai/media/generate", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+      body: JSON.stringify({ ...input, mediaType, canvasId: query.canvasId, background: true }), signal: requestSignal(signal),
+    }));
+  }
+
+  async function getMediaGeneration(input: MediaTaskQuery, signal?: AbortSignal) {
+    return readResult<NodeMediaTask | null>(await fetch("/api/ai/media/tasks/get", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+      body: JSON.stringify(mediaTaskQuery(input)), signal: requestSignal(signal), cache: "no-store",
+    }));
+  }
+
+  async function waitMediaGeneration(task: NodeMediaTask, signal?: AbortSignal) {
+    const waitingSignal = requestSignal(signal);
+    while (true) {
+      waitingSignal.throwIfAborted();
+      if (task.status === "succeeded") {
+        if (!task.results?.length) throw new Error("生成任务未返回媒体结果");
+        return task.results;
+      }
+      if (task.status !== "running") throw task.status === "cancelled"
+        ? new DOMException(task.error || "生成已取消", "AbortError") : new Error(task.error || "媒体生成失败");
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => { clearTimeout(timer); reject(waitingSignal.reason); };
+        const timer = setTimeout(() => { waitingSignal.removeEventListener("abort", abort); resolve(); }, 2000);
+        waitingSignal.addEventListener("abort", abort, { once: true });
+      });
+      const current = await getMediaGeneration(task, waitingSignal);
+      if (!current) throw new Error("生成任务不存在");
+      task = current;
+    }
+  }
+
+  async function cancelMediaGeneration(task: NodeMediaTask) {
+    return readResult<NodeMediaTask>(await fetch("/api/ai/media/tasks/cancel", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+      body: JSON.stringify(mediaTaskQuery(task)), signal: requestSignal(),
+    }));
+  }
+
   async function generate(input: NodeAiRequest): Promise<NodeAiResult> {
     const signal = requestSignal(input.signal);
     const callSignal = input.tools?.length ? AbortSignal.any([signal, AbortSignal.timeout(600000)]) : signal;
@@ -318,5 +382,6 @@ export function useNodeAi() {
     return { text, ...(reasoning ? { reasoning } : {}) };
   }
 
-  return { getModels, getMediaModels, getMediaPrice, generateImage, generateVideo, generateAudio, generate };
+  return { getModels, getMediaModels, getMediaPrice, generateImage, generateVideo, generateAudio,
+    startMediaGeneration, getMediaGeneration, waitMediaGeneration, cancelMediaGeneration, generate };
 }

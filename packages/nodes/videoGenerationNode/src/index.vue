@@ -86,10 +86,10 @@
             <el-button
               class="sendButton"
               :icon="generating ? IconPlayerStop : IconArrowUp"
-              :disabled="deleting || uploading || (!generating && (!generationPrompt || !selectedModel))"
+              :disabled="restoring || deleting || uploading || (!generating && (!generationPrompt || !selectedModel))"
               :title="generating ? '停止生成' : '生成视频'"
               :aria-label="generating ? '停止生成' : '生成视频'"
-              @click="generating ? generationController?.abort() : startGeneration().catch((error) => showNodeError(error, '视频生成失败'))" />
+              @click="(generating ? cancelGeneration() : startGeneration()).catch((error) => showNodeError(error, '视频生成失败'))" />
           </div>
         </div>
       </el-card>
@@ -102,7 +102,7 @@
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from "vue";
 import { ElButton, ElCard, ElSelect, ElOption, ElOptionGroup, ElLoading, ElDropdown, ElDropdownMenu, ElDropdownItem } from "element-plus";
 import { IconCameraAi, IconSparkles, IconArrowUp, IconPlayerStop, IconTransfer, IconMusic, IconLayersSubtract, IconScissors, IconPhotoScan, IconPlayerSkipBack, IconPlayerSkipForward } from "@tabler/icons-vue";
-import { nodeSkeleton, nodeTools, useNode, z, type NodeMediaModel, type NodeVideoRequest, type NodeHandle } from "@toonflow/nodes-scaffold/runtime";
+import { nodeSkeleton, nodeTools, useNode, z, type NodeMediaModel, type NodeMediaTask, type NodeVideoRequest, type NodeHandle } from "@toonflow/nodes-scaffold/runtime";
 import { groupNodeModels } from "@toonflow/node-shared/groupNodeModels";
 import { showNodeError } from "@toonflow/node-shared/showNodeError";
 import { useNodeGeneration } from "@toonflow/node-shared/useNodeGeneration";
@@ -128,7 +128,8 @@ const { id, node, nodeProps, nodeEvent, outputs, files, ai, updateNodeInternals 
   label: "视频生成",
 });
 type PromptModel = NonNullable<InstanceType<typeof promptInput>["$props"]["modelValue"]>;
-const data = computed(() => node.data as { prompt: string; promptModel: PromptModel; model: string; duration?: number; resolution: string; ratio: string; mode: string; generateAudio: boolean });
+const data = computed(() => node.data as { prompt: string; promptModel: PromptModel; model: string; duration?: number; resolution: string; ratio: string; mode: string; generateAudio: boolean;
+  mediaTask?: Pick<NodeMediaTask, "id" | "canvasId">; appliedMediaTaskId?: string });
 data.value.prompt ??= "";
 data.value.promptModel ??= [];
 data.value.model ??= "";
@@ -139,6 +140,7 @@ data.value.ratio ??= "9:16";
 const { refList, referenceMentions, setReferencePreview, removeReference } = useNodeReferences();
 const models = ref<NodeMediaModel[]>([]);
 const modelsLoading = ref(false);
+const restoring = ref(true);
 const uploading = ref(false);
 const fileInput = ref<HTMLInputElement>();
 let disposed = false;
@@ -147,8 +149,10 @@ const player = ref<InstanceType<typeof videoPlayer>>();
 const actions = ref<InstanceType<typeof videoActions>>();
 const videoWidth = ref(0);
 let generationController: AbortController | undefined;
-const generationState = useNodeGeneration(outputs, () => generationController?.abort());
-const { generating } = generationState;
+let activeTask: NodeMediaTask | undefined;
+let startingTask: Promise<NodeMediaTask> | undefined;
+const generationState = useNodeGeneration(outputs, () => { void cancelGeneration().catch(error => showNodeError(error, "停止视频生成失败")); });
+const generating = computed(() => restoring.value || generationState.generating.value);
 let generation: Promise<void> | undefined;
 let modelsRequest: Promise<void> | undefined;
 // ACT: 供应商未声明视频比例范围，沿用界面的通用比例，具体支持范围由供应商校验。
@@ -244,7 +248,9 @@ const previewUrl = files.useFileUrl(
 onMounted(() => {
   window.addEventListener("toonflow:plugin-installed", refreshProviderModels);
   window.addEventListener("toonflow:provider-config-changed", refreshProviderModels);
-  void loadModels().catch(error => { if (!disposed) showNodeError(error, "模型读取失败"); });
+  void loadModels().catch(error => { if (!disposed) showNodeError(error, "模型读取失败"); })
+    .then(() => restoreGeneration()).catch(error => { if (!disposed) showNodeError(error, "恢复视频生成失败"); })
+    .finally(() => { restoring.value = false; });
 });
 onScopeDispose(() => {
   disposed = true;
@@ -291,7 +297,7 @@ function loadModels() {
   if (modelsRequest) return modelsRequest;
   modelsLoading.value = true;
   modelsRequest = ai.getMediaModels().then((items) => {
-    if (disposed || generating.value || deleting.value) return;
+    if (disposed || generationState.generating.value || deleting.value) return;
     models.value = items.filter((item) => item.type === "video");
     // ACT: 只给空配置选默认模型，保留暂时不可用的旧选择及其参数。
     if (!data.value.model) {
@@ -318,23 +324,58 @@ async function startGeneration() {
   const workspace = files.getWorkspaceFiles();
   const controller = new AbortController();
   generationController = controller;
-  // ACT: 工具立即返回，任务由节点持有，停止或卸载时取消。
+  // ACT: 服务端保存并执行任务；卸载只中止本页等待，停止按钮和删除节点显式取消任务。
   generation = generationState.run(() => workspace
     .list()
     .then(({ directory }) => {
       controller.signal.throwIfAborted();
-      return ai.generateVideo({ ...input, directory }, controller.signal);
+      startingTask = ai.startMediaGeneration("video", { ...input, directory }, controller.signal);
+      return startingTask;
     })
-    .then(([result]) => {
-      controller.signal.throwIfAborted();
-      if (!result) throw new Error("供应商未返回视频");
-      outputs.value.video = { dataType: "VIDEO", value: { url: result.path, mimeType: result.mimeType } };
-    }))
-    .catch((error) => showNodeError(error, "视频生成失败"))
+    .then(task => waitForTask(task, controller)))
+    .catch((error) => { if (!disposed) showNodeError(error, "视频生成失败"); })
     .finally(() => {
       generationController = undefined;
+      startingTask = undefined;
+      activeTask = undefined;
     });
   return { status: "generating" };
+}
+
+async function waitForTask(task: NodeMediaTask, controller: AbortController) {
+  controller.signal.throwIfAborted();
+  activeTask = task;
+  data.value.mediaTask = { id: task.id, canvasId: task.canvasId };
+  const [result] = await ai.waitMediaGeneration(task, controller.signal);
+  controller.signal.throwIfAborted();
+  if (!result || result.mediaType !== "video") throw new Error("供应商未返回视频");
+  outputs.value.video = { dataType: "VIDEO", value: { url: result.path, mimeType: result.mimeType } };
+  data.value.appliedMediaTaskId = task.id;
+}
+
+async function restoreGeneration() {
+  const workspace = files.getWorkspaceFiles();
+  const { directory } = await workspace.list();
+  if (disposed || deleting.value) return;
+  const task = await ai.getMediaGeneration({ directory, mediaType: "video", outputDirectory: `assets/${id}`, canvasId: data.value.mediaTask?.canvasId });
+  if (disposed || deleting.value || !task || task.id === data.value.appliedMediaTaskId) return;
+  const controller = new AbortController();
+  generationController = controller;
+  restoring.value = false;
+  generation = generationState.run(() => waitForTask(task, controller))
+    .catch(error => { if (!disposed) showNodeError(error, "视频生成失败"); })
+    .finally(() => {
+      generationController = undefined;
+      activeTask = undefined;
+    });
+  await generation;
+}
+
+async function cancelGeneration() {
+  const controller = generationController;
+  const task = activeTask ?? await startingTask;
+  if (task) await ai.cancelMediaGeneration(task);
+  controller?.abort();
 }
 
 nodeEvent.on("save", (reason) => {
@@ -343,8 +384,8 @@ nodeEvent.on("save", (reason) => {
 nodeEvent.on("delete", async () => {
   if (uploading.value) throw new Error("视频正在替换，请稍后删除节点");
   deleting.value = true;
-  generationController?.abort();
   try {
+    await cancelGeneration();
     await generation;
     await files.removeNodeFiles();
   } finally {

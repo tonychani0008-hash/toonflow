@@ -8,14 +8,23 @@ import { translateMessage, validationOptions } from "@/lib/i18n";
 
 export default Router().post("/", validateFields({
   directory: z.string().min(1).max(4096), mediaType: z.enum(["image", "video", "audio"]),
+  background: z.boolean().optional(),
+  canvasId: imageGenerationSchema.shape.outputDirectory.unwrap().optional(),
 }), async (req, res) => {
-  const { directory, mediaType, ...request } = req.body;
+  const { directory, mediaType, background, canvasId, ...request } = req.body;
   const parsed = (mediaType === "image" ? imageGenerationSchema : mediaType === "video" ? videoGenerationSchema : audioGenerationSchema).safeParse(request, validationOptions());
   if (!parsed.success) {
     res.status(400).json(error("参数错误", parsed.error.issues.map(issue => ({ ...issue, message: translateMessage(issue.message) })), 400));
     return;
   }
   const cwd = await u.workspace.resolveWorkspace(req, directory);
+  if (background) {
+    if (!canvasId || !parsed.data.outputDirectory) throw Object.assign(new Error("后台生成需要画布与节点输出目录"), { status: 400 });
+    res.json(success(await u.mediaTasks.startMediaTask({
+      directory: cwd, canvasId, mediaType, outputDirectory: parsed.data.outputDirectory,
+    }, parsed.data)));
+    return;
+  }
   const controller = new AbortController();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   const close = () => { clearInterval(heartbeat); controller.abort(); };

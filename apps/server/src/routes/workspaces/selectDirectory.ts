@@ -30,13 +30,15 @@ $dialog.Description = "选择工作目录"
 $owner = [System.Windows.Forms.Form]::new()
 $owner.ShowInTaskbar = $false
 $owner.Opacity = 0
+$selected = ""
 try {
   # ACT: 隐形父窗口先显示，系统目录弹窗才能继承置顶状态。
   $owner.Show()
   $owner.TopMost = $true
   $owner.Activate()
-  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) }
+  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { $selected = $dialog.SelectedPath }
 } finally { $dialog.Dispose(); $owner.Dispose() }
+[Console]::Write([string][char]0 + $selected + [string][char]0)
 `;
   const macScript = `try
   return POSIX path of (choose folder with prompt "选择工作目录")
@@ -47,10 +49,13 @@ end try`;
     const { stdout } = process.platform === "win32"
       ? await runFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-Command", windowsScript], { windowsHide: true })
       : await runFile("/usr/bin/osascript", ["-e", macScript]);
-    const selected = stdout.replace(/\r?\n$/, "");
+    // Windows Shell 组件可能向 stdout 写入警告；路径不能包含空字符，用它隔离选择结果。
+    const selected = process.platform === "win32" ? /\0([^\0]*)\0/.exec(stdout)?.[1] : stdout.replace(/\r?\n$/, "");
+    if (selected === undefined) throw new Error("文件夹选择器未返回选择结果");
     const directory = selected ? await realpath(selected) : null;
     res.json(success({ native: true, directory }));
-  } catch {
+  } catch (cause) {
+    console.error("选择本机工作目录失败：", cause);
     res.status(500).json(error("无法打开本机文件夹选择器，请重试", null, 500));
   }
 });
