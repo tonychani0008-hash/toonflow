@@ -1,0 +1,109 @@
+{
+	"settings": {
+		"customProviders": [
+			{
+				"id": "dp4_1",
+				"label": "opencode",
+				"apiUrl": "http://10.10.100.55:3001",
+				"protocol": "openai-completions",
+				"apiKey": "sk-BvfwIAWR4Zf5Qn3PWAzDk90PK8ys0slrBt8508FCBh3NKQfi",
+				"models": [
+					{
+						"id": "gemini-4-argon-contributor",
+						"label": "gemini-4-argon-contributor"
+					}
+				]
+			}
+		],
+		"privacy": {
+			"dataCollectionEnabled": true,
+			"anonymousId": "6620bd59-d2a3-4bc8-8b24-b5cbc0a96ef6"
+		},
+		"helloCompleted": true,
+		"stores": {
+			"toonflow.projectList": {
+				"project": {
+					"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/beibo",
+					"name": "beibo",
+					"lastOpenedAt": 1792378316674
+				},
+				"projectList": [
+					{
+						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/beibo",
+						"name": "beibo",
+						"lastOpenedAt": 1792378316674
+					},
+					{
+						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/videos",
+						"name": "videos",
+						"lastOpenedAt": 1792376143679
+					}
+				]
+			},
+			"toonflow:documentLayout:D:\\ws\\video_test_f\\video_longf1": {
+				"layout": {
+					"grid": {
+						"root": {
+							"type": "branch",
+							"data": [
+								{
+									"type": "leaf",
+									"data": {
+										"views": [
+											"[\"file\",\"D:\\\\ws\\\\video_test_f\\\\video_longf1\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png\",\"\"]"
+										],
+										"activeView": "[\"file\",\"D:\\\\ws\\\\video_test_f\\\\video_longf1\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png\",\"\"]",
+										"id": "1"
+									},
+									"size": 1276
+								}
+							],
+							"size": 766
+						},
+						"width": 1276,
+						"height": 766,
+						"orientation": "HORIZONTAL"
+					},
+					"panels": {
+						"[\"file\",\"D:\\\\ws\\\\video_test_f\\\\video_longf1\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png\",\"\"]": {
+							"id": "[\"file\",\"D:\\\\ws\\\\video_test_f\\\\video_longf1\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png\",\"\"]",
+							"contentComponent": "extView",
+							"tabComponent": "editorTab",
+							"title": "image09ebdb26-1118-4a50-b172-ce1c5082bf49.png"
+						}
+					},
+					"activeGroup": "1"
+				},
+				"treeWidth": 260,
+				"tabs": [
+					{
+						"id": "[\"file\",\"D:\\\\ws\\\\video_test_f\\\\video_longf1\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png\",\"\"]",
+						"preview": true,
+						"selection": {
+							"filePath": "assets/66a5a816-e738-4d26-b520-538ab4e5db7b/image09ebdb26-1118-4a50-b172-ce1c5082bf49.png",
+							"label": "image09ebdb26-1118-4a50-b172-ce1c5082bf49.png"
+						},
+						"extensionId": "ext-image"
+					}
+				]
+			},
+			"toonflow:documentTree:d:/ws/video_test_f/video_longf1": {
+				"expandedKeys": [
+					"[\"canvas\",\"画布1.json\"]",
+					"[\"directory\",\"assets\"]",
+					"[\"directory\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b\"]"
+				]
+			}
+		},
+		"ui": {
+			"language": "zh-CN"
+		},
+		"mediaProviderConfigs": {
+			"localMageflow": {
+				"baseUrl": "http://192.168.2.16:7861/v1",
+				"steps": 8,
+				"cfg": 3
+			}
+		}
+	}
+}

@@ -1,7 +1,9 @@
 node_modules/
 dist/
 /build/
-/data/
+/data/*
+!/data/providers/
+!/data/settings.json
 /work/
 /backup/
 .playwright-mcp/
