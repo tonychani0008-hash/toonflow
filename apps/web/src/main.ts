@@ -1,3 +1,4 @@
+import "@/lib/browserCrypto";
 import { createApp, h, nextTick, ref } from "vue";
 import { ElButton, ElResult } from "element-plus";
 import { createPinia } from "pinia";
