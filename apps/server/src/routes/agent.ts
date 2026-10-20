@@ -8,6 +8,7 @@ import { translateError, translateMessage } from "@/lib/i18n";
 
 const inputSchema = z.object({
   prompt: z.string().trim(), directory: z.string().min(1),
+  requestId: z.uuid().optional(),
   attachments: u.agent.agentAttachmentsSchema.optional(),
   mentions: u.agent.agentMentionsSchema.optional(),
   providerId: z.string().min(1), modelId: z.string().min(1),
@@ -27,10 +28,8 @@ const inputSchema = z.object({
 });
 
 export default Router().post("/", validateFields(inputSchema.shape), async (req, res) => {
-  const { directory, canvas, ...options } = req.body as z.infer<typeof inputSchema>;
+  const { directory, canvas, requestId, ...options } = req.body as z.infer<typeof inputSchema>;
   const cwd = await u.workspace.resolveWorkspace(req, directory);
-  res.set({ "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
-  res.flushHeaders();
   const send = (event: AgentEvent) => {
     if (event.type === "error") event = { ...event, message: translateMessage(event.message) };
     if (event.type === "session") options.sessionFile = event.file;
@@ -40,14 +39,19 @@ export default Router().post("/", validateFields(inputSchema.shape), async (req,
   const bridge = canvas ? u.canvas.createCanvasContext(cwd, canvas as CanvasInfo, send) : undefined;
   const controller = new AbortController();
   const questions = u.question.createQuestionContext(cwd, send, () => controller.abort());
-  const heartbeat = setInterval(() => {
-    if (!res.destroyed && !res.writableEnded && !res.writableNeedDrain) res.write("\n");
-  }, 20000);
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   const close = () => { clearInterval(heartbeat); bridge?.dispose(); questions.dispose(); controller.abort(); };
+  const unregister = u.agent.registerAgentRequest(requestId ?? crypto.randomUUID(), cwd, close);
   res.once("close", close);
   req.once("aborted", close);
   req.socket.once("close", close);
   try {
+    // ACT: 先登记取消入口再发送响应头，前端收到响应后即可安全发起停止请求。
+    res.set({ "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+    res.flushHeaders();
+    heartbeat = setInterval(() => {
+      if (!res.destroyed && !res.writableEnded && !res.writableNeedDrain) res.write("\n");
+    }, 20000);
     await u.agent.run({ ...options, cwd, canvas: bridge?.context, question: questions.context, signal: controller.signal, onCancel: close }, send);
     send({ type: "done" });
   } catch (error) {
@@ -59,6 +63,7 @@ export default Router().post("/", validateFields(inputSchema.shape), async (req,
     req.socket.off("close", close);
     bridge?.dispose();
     questions.dispose();
+    unregister();
     res.end();
   }
 });

@@ -36,7 +36,26 @@ type SessionMessage = {
 };
 // ACT: 复用正在运行的 SDK 会话，文件锁仍由 run 持有；多进程部署时需共享会话所有权。
 const activeSessions = new Map<string, ActiveAgentSession>();
+const activeRequests = new Map<string, { cwd: string; abort(): void; finished: Promise<void> }>();
 const sessionKey = (path: string) => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
+
+export function registerAgentRequest(requestId: string, cwd: string, abort: () => void) {
+  if (activeRequests.has(requestId)) throw Object.assign(new Error("对话请求已存在"), { status: 409 });
+  const finished = Promise.withResolvers<void>();
+  activeRequests.set(requestId, { cwd, abort, finished: finished.promise });
+  return () => {
+    activeRequests.delete(requestId);
+    finished.resolve();
+  };
+}
+
+export async function stopAgentRequest(cwd: string, requestId: string) {
+  const request = activeRequests.get(requestId);
+  if (!request) return;
+  if (request.cwd !== cwd) throw Object.assign(new Error("对话请求不属于当前工作区"), { status: 404 });
+  request.abort();
+  await request.finished;
+}
 
 export function getActiveAgentSession(path: string) {
   return activeSessions.get(sessionKey(path));

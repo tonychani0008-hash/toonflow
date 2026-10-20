@@ -6,6 +6,7 @@ import { getAgentImageReference, getOffloadedImageText, readAgentImage, saveAgen
 import type { AgentImageReference } from "@/agent/runtime/imageAttachments";
 import { getRequestFiles, type RequestFile } from "@/utils/ai/requestFiles";
 import { createFileTransport, FileRequestLimitError } from "@/utils/ai/files";
+import { getOpenCodeHeaders } from "@/utils/ai";
 import conf from "@/utils/conf";
 
 function contentHash(value: unknown) {
@@ -51,6 +52,7 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
         const provider = Array.isArray(providers) ? providers.find(item => item?.id === model.provider) : undefined;
         const auth = await session.modelRuntime.getAuth(model, { apiKey: options?.apiKey, env: options?.env, signal: options?.signal });
         const apiKey = options?.apiKey ?? auth?.auth.apiKey;
+        const headers = getOpenCodeHeaders(provider?.label, history.getSessionId());
         const files = createFileTransport({
           apiUrl: auth?.auth.baseUrl ?? model.baseUrl,
           apiKey: apiKey ?? "",
@@ -181,6 +183,7 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
           const stream = await streamFunction(model, requestContext, {
             ...options,
             apiKey,
+            ...(headers ? { headers: { ...options?.headers, ...headers } } : {}),
             onPayload: async (payload, requestModel) => {
               try {
                 const body = await options?.onPayload?.(payload, requestModel) ?? payload;

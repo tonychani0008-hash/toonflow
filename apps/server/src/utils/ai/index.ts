@@ -3,6 +3,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { Context, Model } from "@earendil-works/pi-ai";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import conf from "@/utils/conf";
 import { readReference } from "@/utils/media/generation";
@@ -53,7 +54,8 @@ export function getModelLimits(providerId: string, model: z.infer<typeof provide
 
 export function getConfiguredModel(providerId: string, modelId: string) {
   const providers = conf.get("settings", {}).customProviders;
-  const parsed = providerSchema.safeParse(Array.isArray(providers) ? providers.find(item => item?.id === providerId) : undefined);
+  const configuredProvider = Array.isArray(providers) ? providers.find(item => item?.id === providerId) : undefined;
+  const parsed = providerSchema.safeParse(configuredProvider);
   if (!parsed.success) throw Object.assign(new Error("请先在设置中配置模型供应商"), { status: 400 });
   const provider = parsed.data;
   const model = provider.models.find(item => item.id === modelId);
@@ -61,7 +63,11 @@ export function getConfiguredModel(providerId: string, modelId: string) {
   const baseUrl = new URL(provider.apiUrl);
   if (baseUrl.pathname === "/") baseUrl.pathname = "/v1";
   const limits = getModelLimits(providerId, model);
-  return { provider, model: { ...model, contextWindow: limits.contextWindow, maxOutputTokens: limits.maxTokens }, baseUrl: baseUrl.href.replace(/\/+$/, "") };
+  return {
+    provider, providerLabel: typeof configuredProvider?.label === "string" ? configuredProvider.label : "",
+    model: { ...model, contextWindow: limits.contextWindow, maxOutputTokens: limits.maxTokens },
+    baseUrl: baseUrl.href.replace(/\/+$/, ""),
+  };
 }
 
 export function listAiModels() {
@@ -86,6 +92,21 @@ const aiApis = {
   "openai-responses": openAIResponsesApi(),
   "anthropic-messages": anthropicMessagesApi(),
 };
+
+export function getOpenCodeHeaders(providerLabel: unknown, session: string | Context) {
+  if (typeof providerLabel !== "string" || !["opencode", "opencode go", "opencode zen"].includes(providerLabel.trim().toLowerCase())) return;
+  let sessionId: string;
+  if (typeof session === "string") sessionId = session;
+  else {
+    // ACT: 节点生成无独立会话 ID，以首条用户消息关联本次工具循环；跨生成的长对话需显式传入会话 ID。
+    const message = session.messages.find(item => item.role === "user");
+    sessionId = message ? createHash("sha256").update(JSON.stringify([message.timestamp, message.content])).digest("hex") : randomUUID();
+  }
+  return {
+    "User-Agent": `Toonflow/${process.env.appVersion ?? "dev"}`,
+    "x-opencode-session": sessionId,
+  };
+}
 
 export const aiReferenceSchema = z.discriminatedUnion("dataType", [
   z.object({ dataType: z.literal("STRING"), value: z.string().max(1000000) }),
@@ -161,8 +182,10 @@ export function streamAi(
     maxTokens: configuredModel.maxOutputTokens,
   };
   const files = createFileTransport({ ...provider, apiUrl: baseUrl }, { signal });
+  const headers = getOpenCodeHeaders(configured.providerLabel, context);
   return aiApis[provider.protocol].streamSimple(model, context, {
     apiKey: provider.apiKey,
+    ...(headers ? { headers } : {}),
     signal,
     fetch: files.fetch,
     onPayload: async (payload) => {
