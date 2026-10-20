@@ -1,6 +1,6 @@
 # FFmpeg 媒体处理
 
-为 Agent 提供 `ffmpeg` 和 `ffprobe`，直接连接 `context.ffmpeg()`，复用插件市场配置的执行程序及节点已有的调用桥接。
+为 Agent 提供 `ffmpeg`、`ffprobe` 和 `extractLastFrame`，直接连接 `context.ffmpeg()`，复用插件市场配置的执行程序及节点已有的调用桥接。
 
 ## 调用方式
 
@@ -9,6 +9,22 @@
 ```json
 { "path": "assets/input.mp4", "options": ["-count_frames"] }
 ```
+
+处理画布素材时，优先引用节点的当前输出，避免转抄长文件名：
+
+```json
+{ "path": { "nodeId": "实际节点 ID", "output": "video" } }
+```
+
+`nodeId` 和 `output` 必须来自实际查询的节点与输出端口。工具每次执行时读取激活画布上的当前输出并验证文件，不根据历史消息、文件名或修改时间选择版本。节点不存在、输出缺失或文件不可读时直接报错，不自动改用旧文件；`idle` 不表示节点没有可用输出。
+
+跨片段衔接需要上一段尾帧时，使用 `extractLastFrame`，直接引用上一段的原始视频节点：
+
+```json
+{ "source": { "nodeId": "原始视频节点 ID", "output": "video" } }
+```
+
+工具实际解码统计帧数，再提取编号为 `frameCount - 1` 的最后一帧，不使用时长乘帧率估算，也不从合并成片寻找边界。返回 `source`、`sourcePath`、`frameCount`、`frameIndex`、`path` 和 `mimeType`；PNG 保存到 `assets/` 内的新文件，失败或取消会清理本次图片。两遍扫描的耗时随视频帧数增长，不缓存整段视频。将返回的 `path` 用于图片节点的 `setImage`，再作为后段参考；不要用图片生成重建尾帧。
 
 `ffmpeg` 的 `steps` 按顺序调用 fluent 方法，`operation` 指定最后执行的方法，省略时使用 `run()`。例如输出图片序列：
 
@@ -24,7 +40,9 @@
 
 也可使用 `operation: { "method": "save", "args": ["assets/output.mp4"] }`，或者原生的 `screenshots`、`concat` 等操作。查询可用编码器、编解码器、格式、滤镜时，省略 `steps`，将 `operation.method` 设为 `availableEncoders`、`availableCodecs`、`availableFormats` 或 `availableFilters`。
 
-`options` 对应宿主支持的 fluent 构造选项：`source`、`cwd`、`niceness`、`priority`、`stdoutLines`、`timeout`。`steps` 支持宿主已有的全部配置方法和别名；`args` 中的 JSON 值保持原样，`undefinedArgs` 可指定要传入 `undefined` 的位置。
+`options` 对应宿主支持的 fluent 构造选项：`source`、`cwd`、`niceness`、`priority`、`stdoutLines`、`timeout`。`steps` 支持宿主已有的全部配置方法和别名；除输入节点引用外，`args` 中的 JSON 值保持原样，`undefinedArgs` 可指定要传入 `undefined` 的位置。
+
+`options.source` 及 `input`、`addInput`、`mergeAdd` 的首个参数也支持 `{ "nodeId": "实际节点 ID", "output": "video" }`。例如合并两段视频时，分别引用两个节点的 `video` 输出，再按实际流信息配置合并滤镜；执行时由工具解析真实路径，字符串路径的原有用法继续支持。
 
 ## 原生能力与执行
 

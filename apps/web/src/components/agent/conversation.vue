@@ -150,7 +150,7 @@
             </div>
           </div>
         </el-popover>
-        <el-button class="sendButton" type="primary" circle :disabled="!busy && locked" :aria-label="busy ? '停止生成' : editingId ? '重发消息' : '发送消息'" :title="busy ? '停止生成' : editingId ? '重发消息' : '发送消息'" @click="busy ? stopMessage() : submitMessage()">
+        <el-button class="sendButton" type="primary" circle :loading="stopping" :disabled="stopping || (!busy && locked)" :aria-label="stopping ? '正在停止生成' : busy ? '停止生成' : editingId ? '重发消息' : '发送消息'" :title="stopping ? '正在停止生成' : busy ? '停止生成' : editingId ? '重发消息' : '发送消息'" @click="busy ? stopMessage() : submitMessage()">
           <icon-player-stop-filled v-if="busy" :size="14" />
           <icon-arrow-up v-else :size="16" />
         </el-button>
@@ -243,10 +243,11 @@ const remoteRunning = ref(props.initialSession?.running ?? false);
 const stats = ref(props.initialSession?.stats);
 const contextUsage = ref(props.initialSession?.contextUsage);
 const busy = ref(false);
+const stopping = ref(false);
 const compacting = ref(false);
 const deletingId = ref<string>();
 const restoringAttachment = ref(false);
-const locked = computed(() => props.disabled || busy.value || deletingId.value !== undefined || restoringAttachment.value);
+const locked = computed(() => props.disabled || busy.value || stopping.value || deletingId.value !== undefined || restoringAttachment.value);
 const editingId = ref<string>();
 const draftMentions = ref<AgentMention[]>([]);
 const draftMentionTargets = shallowRef<{ key: symbol; element: HTMLElement; mention: AgentMention }[]>([]);
@@ -326,7 +327,10 @@ watch(locale, () => {
     if (tag.type === "Mention") tag.$el.setAttribute("aria-label", t`预览 ${tag.name}`);
   }
 });
-let controller: AbortController | undefined;
+let activeRequest: {
+  id: string; directory: string; controller: AbortController;
+  started: boolean; ready: Promise<void>; stopRequested: boolean;
+} | undefined;
 const senderElement = ref<HTMLElement>();
 const skillMenuRef = ref<InstanceType<typeof skillMenu>>();
 const skillQuery = ref<string>();
@@ -564,8 +568,29 @@ function stopSenderResize(event: PointerEvent) {
   if (senderResize?.pointerId === event.pointerId) senderResize = undefined;
 }
 
-function stopMessage() {
-  controller?.abort();
+async function stopMessage() {
+  const request = activeRequest;
+  if (!request || stopping.value) return;
+  stopping.value = true;
+  request.stopRequested = true;
+  try {
+    if (request.started) {
+      await request.ready;
+      const response = await fetch("/api/agent/stop", {
+        method: "POST", headers: { "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+        body: JSON.stringify({ directory: request.directory, requestId: request.id }), keepalive: true,
+      });
+      const result = await response.json();
+      if (!response.ok || result.code !== 200) throw new Error(result.message || "停止生成失败");
+      remoteRunning.value = false;
+    }
+    request.controller.abort();
+  } catch (error) {
+    request.stopRequested = false;
+    ElMessage.error(error instanceof Error ? error.message : "停止生成失败，请重试");
+  } finally {
+    stopping.value = false;
+  }
 }
 
 async function uploadAttachments(attachments: AgentAttachment[], directory: string, signal: AbortSignal) {
@@ -634,8 +659,10 @@ async function sendMessage(source?: AgentMessage) {
   if (!model) return ElMessage.warning("请先选择模型");
 
   const requestController = new AbortController();
+  const ready = Promise.withResolvers<void>();
+  const request = { id: crypto.randomUUID(), directory, controller: requestController, started: false, ready: ready.promise, stopRequested: false };
   const canvasContext = createCanvasContext?.();
-  controller = requestController;
+  activeRequest = request;
   busy.value = true;
   compacting.value = false;
   instance.disable();
@@ -659,12 +686,15 @@ async function sendMessage(source?: AgentMessage) {
     if (!source) await instance.reset();
     requestController.signal.throwIfAborted();
     await uploadAttachments(attachments, directory, requestController.signal);
+    requestController.signal.throwIfAborted();
+    request.started = true;
     const response = await fetch("/api/agent", {
       method: "POST",
       headers: { "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
-      body: JSON.stringify({ prompt, mentions, attachments: attachments.map(({ name, path, mimeType }) => ({ name, path, mimeType })), directory, providerId: model.providerId, modelId: model.modelId, thinkingLevel: reasoningEffort.value || undefined, sessionFile: props.sessionFile, resendFrom, canvas: canvasContext ? { id: canvasContext.id, tools: canvasContext.tools } : undefined }),
+      body: JSON.stringify({ requestId: request.id, prompt, mentions, attachments: attachments.map(({ name, path, mimeType }) => ({ name, path, mimeType })), directory, providerId: model.providerId, modelId: model.modelId, thinkingLevel: reasoningEffort.value || undefined, sessionFile: props.sessionFile, resendFrom, canvas: canvasContext ? { id: canvasContext.id, tools: canvasContext.tools } : undefined }),
       signal: requestController.signal,
     });
+    ready.resolve();
     for await (const event of readAgentEvents(response, requestController.signal)) {
       // 子任务复用发起委派时的画布与取消通道，界面切换不改变工具执行目标。
       let toolEvent: AgentEvent = event;
@@ -715,19 +745,23 @@ async function sendMessage(source?: AgentMessage) {
         default: applyEvent(event);
       }
     }
+    if (request.stopRequested) requestController.abort();
+    requestController.signal.throwIfAborted();
     if (source && !accepted) throw new Error("服务端未确认重发，请重新打开对话后重试");
     finishStats("success");
     emit("sent", mentionPlainText(prompt, mentions) || attachments[0]?.name || "新对话");
   } catch (error) {
-    finishStats(requestController.signal.aborted ? "cancelled" : "failed");
+    const cancelled = requestController.signal.aborted || request.stopRequested;
+    finishStats(cancelled ? "cancelled" : "failed");
     const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-    const message = requestController.signal.aborted ? "已停止生成" : responseMessage || (error instanceof Error ? error.message : "发送失败，请重试");
+    const message = cancelled ? "已停止生成" : responseMessage || (error instanceof Error ? error.message : "发送失败，请重试");
     if ((source && !accepted) || !ownsStream) { userMessage.error = message; ElMessage.error(message); }
     else reply.error = message;
     if (ownsStream && props.initialSession?.parentFile && props.sessionFile) {
       emit("event", { type: "subAgentEvent", file: props.sessionFile, event: { type: "error", message } });
     }
   } finally {
+    ready.resolve();
     for (const file of activeChildFiles) emit("event", { type: "subAgentEvent", file, event: { type: "error", message: "委派连接已结束，请重新打开子会话查看结果" } });
     // ACT: Bun 的流断开事件可能不触发；主动结束仍在等待的提问，不依赖断开通知。
     for (const callId of pendingQuestions.values()) {
@@ -739,7 +773,7 @@ async function sendMessage(source?: AgentMessage) {
     if (ownsStream && !forwarded) stream.finish();
     compacting.value = false;
     busy.value = false;
-    controller = undefined;
+    if (activeRequest === request) activeRequest = undefined;
   }
 }
 
@@ -900,7 +934,7 @@ watch(senderElement, (element, _previous, onCleanup) => {
   editor.addEventListener("keyup", updateCursor);
   editor.addEventListener("compositionend", updateCursor);
   onCleanup(() => {
-    controller?.abort();
+    void stopMessage();
     draftMentionTargets.value = [];
     sender = undefined;
     senderResize = undefined;

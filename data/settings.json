@@ -9,8 +9,8 @@
 				"apiKey": "sk-BvfwIAWR4Zf5Qn3PWAzDk90PK8ys0slrBt8508FCBh3NKQfi",
 				"models": [
 					{
-						"id": "gemini-4-argon-contributor",
-						"label": "gemini-4-argon-contributor"
+						"id": "deepseek-v4.1-flash",
+						"label": "deepseek-v4.1-flash"
 					}
 				]
 			}
@@ -23,15 +23,20 @@
 		"stores": {
 			"toonflow.projectList": {
 				"project": {
-					"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/beibo",
-					"name": "beibo",
-					"lastOpenedAt": 1792378316674
+					"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2",
+					"name": "luo2",
+					"lastOpenedAt": 1792482428683
 				},
 				"projectList": [
 					{
-						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/beibo",
-						"name": "beibo",
-						"lastOpenedAt": 1792378316674
+						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2",
+						"name": "luo2",
+						"lastOpenedAt": 1792482428683
+					},
+					{
+						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luobo",
+						"name": "luobo",
+						"lastOpenedAt": 1792399402470
 					},
 					{
 						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/videos",
@@ -93,6 +98,43 @@
 					"[\"directory\",\"assets\"]",
 					"[\"directory\",\"assets/66a5a816-e738-4d26-b520-538ab4e5db7b\"]"
 				]
+			},
+			"toonflow:documentLayout:/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo": {
+				"layout": {
+					"grid": {
+						"root": {
+							"type": "branch",
+							"data": [],
+							"size": 766
+						},
+						"width": 1276,
+						"height": 766,
+						"orientation": "HORIZONTAL"
+					},
+					"panels": {}
+				},
+				"treeWidth": 260,
+				"tabs": []
+			},
+			"toonflow:documentLayout:/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2": {
+				"layout": {
+					"grid": {
+						"root": {
+							"type": "branch",
+							"data": [],
+							"size": 766
+						},
+						"width": 1276,
+						"height": 766,
+						"orientation": "HORIZONTAL"
+					},
+					"panels": {}
+				},
+				"treeWidth": 260,
+				"tabs": []
+			},
+			"toonflow:documentTree:/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2": {
+				"expandedKeys": []
 			}
 		},
 		"ui": {
