@@ -7,6 +7,7 @@ await createToolConfig({
   author: "Toonflow",
   github: "https://github.com/HBAI-Ltd/Toonflow-app",
   prompt: `处理前按需使用 ffprobe 查询实际媒体信息，再通过 ffmpeg 的 steps 顺序调用 fluent 方法，operation 选择执行或能力查询。
+availableFilters/Codecs/Encoders/Formats 及 getAvailable 别名的 operation.args 必须为 []；查找 drawtext 等能力时，从返回结果按名称查找，不将筛选名称或回调占位参数传入 args。ffprobe 的输入索引与原生选项数组仍按原接口使用。
 画布素材优先通过 {nodeId, output} 引用节点当前输出，放在 ffprobe.path、ffmpeg 的 input/addInput/mergeAdd 首个参数或 options.source，避免转抄随机文件名。节点和端口必须先查询；用户要求最新版时不得根据历史消息或 idle 状态改用旧文件，读取失败先核对当前输出，不猜测替代路径。
 跨片段衔接提取尾帧必须调用 extractLastFrame，source 指向上一段原始视频节点；工具实际解码统计帧数并读取最后一帧，再将返回的 path 设为后段参考。不得从合并成片猜分界帧、沿用旧尾帧或用图片生成重建。帧号从 0 开始，N 帧视频的末帧编号为 N-1。
 FFmpeg 选项、滤镜和文件序列沿用原生语法；工具不重写输出位置，不设置固定处理超时。根据用户要求选择输出位置，除非用户要求覆盖，否则使用新文件名。

@@ -40,6 +40,8 @@
 
 也可使用 `operation: { "method": "save", "args": ["assets/output.mp4"] }`，或者原生的 `screenshots`、`concat` 等操作。查询可用编码器、编解码器、格式、滤镜时，省略 `steps`，将 `operation.method` 设为 `availableEncoders`、`availableCodecs`、`availableFormats` 或 `availableFilters`。
 
+上述能力查询及其 `getAvailable*` 别名的 `operation.args` 必须为 `[]`。例如查询 `drawtext` 是否可用时，使用 `{"operation":{"method":"availableFilters","args":[]}}`，再从返回结果读取 `drawtext`，不要把名称作为查询参数。宿主会拒绝多余参数并返回工具错误；回调由宿主注入。`ffprobe` 仍支持原生输入索引和选项数组。
+
 `options` 对应宿主支持的 fluent 构造选项：`source`、`cwd`、`niceness`、`priority`、`stdoutLines`、`timeout`。`steps` 支持宿主已有的全部配置方法和别名；除输入节点引用外，`args` 中的 JSON 值保持原样，`undefinedArgs` 可指定要传入 `undefined` 的位置。
 
 `options.source` 及 `input`、`addInput`、`mergeAdd` 的首个参数也支持 `{ "nodeId": "实际节点 ID", "output": "video" }`。例如合并两段视频时，分别引用两个节点的 `video` 输出，再按实际流信息配置合并滤镜；执行时由工具解析真实路径，字符串路径的原有用法继续支持。

@@ -31,7 +31,7 @@ const processSchema = z.strictObject({
   })).default([]).describe("按 fluent-ffmpeg 顺序配置，方法及其别名沿用宿主；选项、滤镜和文件序列原样传递"),
   operation: z.strictObject({
     method: z.enum([...runMethods, ...queryMethods]),
-    args: z.array(z.json()),
+    args: z.array(z.json()).describe("availableFilters/Codecs/Encoders/Formats 及 getAvailable 别名的能力查询必须传 []，不能传 drawtext 等筛选名称；ffprobe 可传输入索引和原生选项数组"),
     undefinedArgs: z.array(z.number().int().nonnegative()).optional(),
   }).default({ method: "run", args: [] }).describe("最后执行的方法，默认 run；也可 save、screenshots、concat 或查询编码器、格式、滤镜等"),
 });
@@ -159,6 +159,7 @@ const plugin: ToolPlugin = {
         "用户要求最新版时，以目标节点当前输出为准，idle 不表示输出过期或不存在。路径读取失败先重新查询节点输出、核对实际目录；不得自行替换为旧生成、旧降噪或旧合并文件，也不得通过模糊匹配猜测替代素材。",
         '截帧示例：{"steps":[{"method":"input","args":["assets/input.mp4"]},{"method":"seekInput","args":[1]},{"method":"frames","args":[1]},{"method":"output","args":["assets/frame.png"]}]}。',
         'inputOptions/outputOptions 按 fluent 原生语法传参，不额外拆分空格。含空格的元数据使用 args:["-metadata","title=a b"]，不要再嵌套数组。先用 operation={"method":"availableEncoders","args":[]} 等查询实际能力，不猜测本机编码器。',
+        'availableFilters/Codecs/Encoders/Formats 及其 getAvailable 别名只接受 args:[]；查询 drawtext 等能力时，从完整查询结果中按名称查找，不把名称放进 args。回调由宿主提供，不传回调占位参数。',
         "除非用户要求覆盖，否则使用新文件名；所有显式路径及参数、滤镜和媒体清单中引用的文件都应位于当前工作区。",
       ],
       parameters: z.toJSONSchema(processSchema, { io: "input", target: "draft-07" }),

@@ -22,12 +22,13 @@
 		"helloCompleted": true,
 		"stores": {
 			"toonflow.projectList": {
-				"project": {
-					"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2",
-					"name": "luo2",
-					"lastOpenedAt": 1792482428683
-				},
+				"project": null,
 				"projectList": [
+					{
+						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo1",
+						"name": "luo1",
+						"lastOpenedAt": 1792494758068
+					},
 					{
 						"directory": "/home/dskj/ws_zl/toonflow/toonflow/data/workspaces/luo2",
 						"name": "luo2",

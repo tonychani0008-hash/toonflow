@@ -42,6 +42,10 @@ export async function executeRemoteFfmpeg(
     if (!queryNames.has(operation.method) && !runNames.has(operation.method)) {
       throw messageError(msg`FFmpeg 执行方法不可用：${operation.method}`);
     }
+    // 能力查询只接受宿主注入的回调；额外参数会占用回调位置，在原生异步回调中导致进程退出。
+    if (queryNames.has(operation.method) && operation.method !== "ffprobe" && operation.args.length) {
+      throw messageError(msg`FFmpeg 能力查询 ${operation.method} 不接受参数，请将 operation.args 设为 []，再从返回结果中查找所需能力`);
+    }
     let command = factory(request.options);
     for (const call of request.calls) command = invoke(command, call) as FfmpegCommand;
     await new Promise<void>(resolve => {
